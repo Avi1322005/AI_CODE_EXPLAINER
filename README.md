@@ -103,6 +103,7 @@ else:
     print(10)
 ```
 
+
 # 📌 Example Output
 🔁 Loops
 This loop repeats 3 times using the variable 'i'
@@ -116,6 +117,7 @@ Step 2: Loop starts
 Step 3: 'i' becomes 0  
 Step 4: The program prints 0  
 ...
+
 
 # 🧭 Project Roadmap
 ## ✅ Completed
@@ -134,6 +136,7 @@ Execution flow simulation
 🤖 AI-powered explanations
 📊 Code complexity analysis
 🌍 Deployment (Streamlit Cloud)
+
 
 # 🎯 Purpose
 This project is designed for:
