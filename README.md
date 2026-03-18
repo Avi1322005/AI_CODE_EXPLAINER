@@ -97,7 +97,7 @@ Automatically classifies code as:
 ---
 
 ## 📂 Project Structure
-
+```bash
 python-code-explainer/
 │
 ├── app.py            # FastAPI backend
@@ -105,7 +105,7 @@ python-code-explainer/
 ├── dashboard.py      # Streamlit UI
 ├── requirements.txt
 └── README.md
-
+```
 ---
 
 ## ▶️ How to Run
@@ -113,8 +113,8 @@ python-code-explainer/
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/your-username/python-code-explainer.git
-cd python-code-explainer
+git clone https://github.com/Avi1322005/AI_CODE_EXPLAINER.git
+cd AI_CODE_EXPLAINER
 ```
 
 ### 2. Install dependencies
