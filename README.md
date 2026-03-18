@@ -154,6 +154,20 @@ Step 2: Loop starts
 Step 3: 'i' becomes 0  
 Step 4: The program prints 0  
 ...
+
+## 📸 Screenshots
+
+### 🏠 Home Screen
+![Home](screenshots/home.png)
+
+### 🧾 Output
+![Output](screenshots/output.png)
+
+### 🔄 Execution Flow
+![Flow](screenshots/flow.png)
+
+### 📊 Variable Timeline
+![Timeline](screenshots/timeline.png)
 ### 📊 Variable Timeline
 
 x:
