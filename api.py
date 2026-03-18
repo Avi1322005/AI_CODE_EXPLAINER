@@ -1,6 +1,12 @@
 import ast
 
 
+def record_variable(timeline, var_name, value, step_number):
+    if var_name not in timeline:
+        timeline[var_name] = []
+    timeline[var_name].append(f"Step {step_number}: {value}")
+
+
 def check_errors(code: str):
     """
     Checks whether the code has syntax errors.
@@ -52,7 +58,11 @@ def explain_range(iter_node):
     """
     Converts range(...) into a more human-friendly explanation.
     """
-    if isinstance(iter_node, ast.Call) and hasattr(iter_node.func, "id") and iter_node.func.id == "range":
+    if (
+        isinstance(iter_node, ast.Call)
+        and hasattr(iter_node.func, "id")
+        and iter_node.func.id == "range"
+    ):
         args = iter_node.args
 
         if len(args) == 1:
@@ -100,9 +110,13 @@ def code_explain(code: str):
         elif stripped.startswith("while "):
             explanations.append(f"Line {i}: This line starts a while loop.")
         elif stripped.startswith("if "):
-            explanations.append(f"Line {i}: This line checks a condition using an if statement.")
+            explanations.append(
+                f"Line {i}: This line checks a condition using an if statement."
+            )
         elif stripped.startswith("elif "):
-            explanations.append(f"Line {i}: This line checks another condition using an elif statement.")
+            explanations.append(
+                f"Line {i}: This line checks another condition using an elif statement."
+            )
         elif stripped.startswith("else"):
             explanations.append(f"Line {i}: This line defines an else block.")
         elif stripped.startswith("def "):
@@ -110,12 +124,22 @@ def code_explain(code: str):
         elif stripped.startswith("return"):
             explanations.append(f"Line {i}: This line returns a value from a function.")
         elif stripped.startswith("import ") or stripped.startswith("from "):
-            explanations.append(f"Line {i}: This line imports a module or specific functionality.")
+            explanations.append(
+                f"Line {i}: This line imports a module or specific functionality."
+            )
         elif "input(" in stripped:
             explanations.append(f"Line {i}: This line takes input from the user.")
         elif "+=" in stripped or "-=" in stripped or "*=" in stripped or "/=" in stripped:
-            explanations.append(f"Line {i}: This line updates a variable using an augmented assignment.")
-        elif "=" in stripped and "==" not in stripped and ">=" not in stripped and "<=" not in stripped and "!=" not in stripped:
+            explanations.append(
+                f"Line {i}: This line updates a variable using an augmented assignment."
+            )
+        elif (
+            "=" in stripped
+            and "==" not in stripped
+            and ">=" not in stripped
+            and "<=" not in stripped
+            and "!=" not in stripped
+        ):
             explanations.append(f"Line {i}: This line assigns a value to a variable.")
 
     if not explanations:
@@ -305,23 +329,9 @@ def categorize_explanations(explanations):
     return categories
 
 
-def build_simple_env(tree):
-    """
-    Build a safe environment from simple assignments only.
-    """
-    env = {}
-    for node in tree.body:
-        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
-            try:
-                env[node.targets[0].id] = ast.literal_eval(node.value)
-            except Exception:
-                pass
-    return env
-
-
 def safe_eval_expr(node, env):
     """
-    Safely evaluate only simple literals, names, and comparisons.
+    Safely evaluate only simple literals, names, arithmetic, comparisons, and booleans.
     """
     if isinstance(node, ast.Constant):
         return node.value
@@ -331,8 +341,14 @@ def safe_eval_expr(node, env):
             return env[node.id]
         raise ValueError(f"Unknown variable: {node.id}")
 
-    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
-        return -safe_eval_expr(node.operand, env)
+    if isinstance(node, ast.UnaryOp):
+        if isinstance(node.op, ast.USub):
+            return -safe_eval_expr(node.operand, env)
+        if isinstance(node.op, ast.UAdd):
+            return +safe_eval_expr(node.operand, env)
+        if isinstance(node.op, ast.Not):
+            return not safe_eval_expr(node.operand, env)
+        raise ValueError("Unsupported unary operation")
 
     if isinstance(node, ast.BinOp):
         left = safe_eval_expr(node.left, env)
@@ -348,6 +364,8 @@ def safe_eval_expr(node, env):
             return left / right
         if isinstance(node.op, ast.Mod):
             return left % right
+        if isinstance(node.op, ast.FloorDiv):
+            return left // right
 
         raise ValueError("Unsupported binary operation")
 
@@ -389,42 +407,220 @@ def safe_eval_expr(node, env):
     raise ValueError("Unsupported expression")
 
 
-def generate_execution_flow(code: str):
+def simulate_function_call(func_node, call_args, caller_env, flow_steps, step_number, functions):
     """
-    Generates a simple beginner-friendly execution flow for basic Python code.
+    Simulate a simple function call with local parameter binding.
     """
-    flow_steps = []
-    tree = ast.parse(code)
-    step_number = 1
-    env = {}
+    local_env = {}
+    params = [arg.arg for arg in func_node.args.args]
 
-    for node in tree.body:
-        if isinstance(node, ast.Assign):
-            if isinstance(node.targets[0], ast.Name):
-                var_name = node.targets[0].id
-                value = get_node_value(node.value)
-                flow_steps.append(f"Step {step_number}: Variable '{var_name}' is set to {value}.")
-                step_number += 1
-                try:
-                    env[var_name] = ast.literal_eval(node.value)
-                except Exception:
-                    pass
+    for i, param in enumerate(params):
+        if i < len(call_args):
+            arg_node = call_args[i]
+            try:
+                if isinstance(arg_node, ast.Name) and arg_node.id in caller_env:
+                    local_env[param] = caller_env[arg_node.id]
+                else:
+                    local_env[param] = safe_eval_expr(arg_node, caller_env)
+            except Exception:
+                local_env[param] = safe_unparse(arg_node)
 
-        elif isinstance(node, ast.AugAssign):
-            target = safe_unparse(node.target)
-            value = safe_unparse(node.value)
-            flow_steps.append(f"Step {step_number}: Variable '{target}' is updated using {type(node.op).__name__} with {value}.")
+            flow_steps.append(
+                f"Step {step_number}: Parameter '{param}' gets the value {local_env[param]}."
+            )
             step_number += 1
 
+    return_value = None
+
+    for stmt in func_node.body:
+        if isinstance(stmt, ast.Assign) and isinstance(stmt.targets[0], ast.Name):
+            var_name = stmt.targets[0].id
+            try:
+                assigned_value = safe_eval_expr(stmt.value, local_env)
+            except Exception:
+                assigned_value = safe_unparse(stmt.value)
+
+            local_env[var_name] = assigned_value
+            flow_steps.append(
+                f"Step {step_number}: Inside '{func_node.name}', '{var_name}' is set to {assigned_value}."
+            )
+            step_number += 1
+
+        elif isinstance(stmt, ast.Expr) and isinstance(stmt.value, ast.Call):
+            if hasattr(stmt.value.func, "id") and stmt.value.func.id == "print":
+                resolved = []
+
+                for arg in stmt.value.args:
+                    if isinstance(arg, ast.Name) and arg.id in local_env:
+                        resolved.append(str(local_env[arg.id]))
+                    elif isinstance(arg, ast.Name) and arg.id in caller_env:
+                        resolved.append(str(caller_env[arg.id]))
+                    else:
+                        try:
+                            resolved.append(str(safe_eval_expr(arg, local_env)))
+                        except Exception:
+                            resolved.append(safe_unparse(arg))
+
+                flow_steps.append(
+                    f"Step {step_number}: Inside '{func_node.name}', the program prints {', '.join(resolved)}."
+                )
+                step_number += 1
+
+        elif isinstance(stmt, ast.Return):
+            try:
+                return_value = safe_eval_expr(stmt.value, local_env)
+            except Exception:
+                return_value = safe_unparse(stmt.value) if stmt.value else None
+
+            flow_steps.append(
+                f"Step {step_number}: The function '{func_node.name}' returns {return_value}."
+            )
+            step_number += 1
+            return return_value, step_number
+
+    return return_value, step_number
+
+
+def execute_block(nodes, env, flow_steps, step_number, functions, timeline):
+    """
+    Recursively executes a list of AST nodes in a beginner-friendly way.
+    """
+    for node in nodes:
+        # ---------------- FUNCTION DEFINITION ----------------
+        if isinstance(node, ast.FunctionDef):
+            functions[node.name] = node
+            flow_steps.append(
+                f"Step {step_number}: A function named '{node.name}' is defined."
+            )
+            step_number += 1
+
+        # ---------------- ASSIGNMENT ----------------
+        elif isinstance(node, ast.Assign):
+            if isinstance(node.targets[0], ast.Name):
+                var_name = node.targets[0].id
+
+                if isinstance(node.value, ast.Call) and isinstance(node.value.func, ast.Name):
+                    func_name = node.value.func.id
+
+                    if func_name in functions:
+                        flow_steps.append(
+                            f"Step {step_number}: The function '{func_name}' is called and its result is stored in '{var_name}'."
+                        )
+                        step_number += 1
+
+                        return_value, step_number = simulate_function_call(
+                            functions[func_name],
+                            node.value.args,
+                            env,
+                            flow_steps,
+                            step_number,
+                            functions,
+                        )
+
+                        env[var_name] = return_value
+                        flow_steps.append(
+                            f"Step {step_number}: '{var_name}' is set to {return_value}."
+                        )
+                        record_variable(timeline, var_name, return_value, step_number)
+                        step_number += 1
+
+                    else:
+                        try:
+                            assigned_value = safe_eval_expr(node.value, env)
+                        except Exception:
+                            assigned_value = safe_unparse(node.value)
+
+                        env[var_name] = assigned_value
+                        flow_steps.append(
+                            f"Step {step_number}: '{var_name}' is set to {assigned_value}."
+                        )
+                        record_variable(timeline, var_name, assigned_value, step_number)
+                        step_number += 1
+
+                else:
+                    try:
+                        assigned_value = safe_eval_expr(node.value, env)
+                    except Exception:
+                        assigned_value = safe_unparse(node.value)
+
+                    env[var_name] = assigned_value
+                    flow_steps.append(
+                        f"Step {step_number}: '{var_name}' is set to {assigned_value}."
+                    )
+                    record_variable(timeline, var_name, assigned_value, step_number)
+                    step_number += 1
+
+        # ---------------- AUGMENTED ASSIGN ----------------
+        elif isinstance(node, ast.AugAssign):
+            target = safe_unparse(node.target)
+            try:
+                current_value = safe_eval_expr(node.target, env)
+                change_value = safe_eval_expr(node.value, env)
+
+                if isinstance(node.op, ast.Add):
+                    new_value = current_value + change_value
+                elif isinstance(node.op, ast.Sub):
+                    new_value = current_value - change_value
+                elif isinstance(node.op, ast.Mult):
+                    new_value = current_value * change_value
+                elif isinstance(node.op, ast.Div):
+                    new_value = current_value / change_value
+                else:
+                    new_value = safe_unparse(node.value)
+            except Exception:
+                new_value = safe_unparse(node.value)
+
+            if isinstance(node.target, ast.Name):
+                env[node.target.id] = new_value
+                record_variable(timeline, node.target.id, new_value, step_number)
+
+            flow_steps.append(
+                f"Step {step_number}: '{target}' is updated to {new_value}."
+            )
+            step_number += 1
+
+        # ---------------- EXPRESSION / PRINT / FUNCTION CALL ----------------
         elif isinstance(node, ast.Expr):
             if isinstance(node.value, ast.Call):
                 if hasattr(node.value.func, "id") and node.value.func.id == "print":
-                    args = [safe_unparse(arg) for arg in node.value.args]
-                    flow_steps.append(f"Step {step_number}: The program prints {', '.join(args)}.")
+                    resolved = []
+
+                    for arg in node.value.args:
+                        if isinstance(arg, ast.Name) and arg.id in env:
+                            resolved.append(str(env[arg.id]))
+                        else:
+                            try:
+                                resolved.append(str(safe_eval_expr(arg, env)))
+                            except Exception:
+                                resolved.append(safe_unparse(arg))
+
+                    flow_steps.append(
+                        f"Step {step_number}: The program prints {', '.join(resolved)}."
+                    )
                     step_number += 1
 
+                elif isinstance(node.value.func, ast.Name):
+                    func_name = node.value.func.id
+                    if func_name in functions:
+                        flow_steps.append(
+                            f"Step {step_number}: The function '{func_name}' is called."
+                        )
+                        step_number += 1
+
+                        _, step_number = simulate_function_call(
+                            functions[func_name],
+                            node.value.args,
+                            env,
+                            flow_steps,
+                            step_number,
+                            functions,
+                        )
+
+        # ---------------- FOR LOOP ----------------
         elif isinstance(node, ast.For):
             loop_var = safe_unparse(node.target)
+            flow_steps.append(f"Step {step_number}: A loop starts.")
+            step_number += 1
 
             if (
                 isinstance(node.iter, ast.Call)
@@ -434,93 +630,122 @@ def generate_execution_flow(code: str):
                 args = node.iter.args
 
                 if len(args) == 1:
-                    start = 0
-                    stop = get_node_value(args[0])
-                    step = 1
+                    start, stop, step = 0, get_node_value(args[0]), 1
                 elif len(args) == 2:
-                    start = get_node_value(args[0])
-                    stop = get_node_value(args[1])
-                    step = 1
+                    start, stop, step = get_node_value(args[0]), get_node_value(args[1]), 1
                 elif len(args) == 3:
-                    start = get_node_value(args[0])
-                    stop = get_node_value(args[1])
-                    step = get_node_value(args[2])
+                    start, stop, step = (
+                        get_node_value(args[0]),
+                        get_node_value(args[1]),
+                        get_node_value(args[2]),
+                    )
                 else:
                     start, stop, step = 0, 0, 1
 
-                flow_steps.append(f"Step {step_number}: A loop starts.")
-                step_number += 1
-
                 try:
                     for value in range(int(start), int(stop), int(step)):
+                        env[loop_var] = value
+                        record_variable(timeline, loop_var, value, step_number)
                         flow_steps.append(f"Step {step_number}: '{loop_var}' becomes {value}.")
                         step_number += 1
-
-                        for inner_node in node.body:
-                            if isinstance(inner_node, ast.Expr):
-                                if isinstance(inner_node.value, ast.Call):
-                                    if hasattr(inner_node.value.func, "id") and inner_node.value.func.id == "print":
-                                        args = [safe_unparse(arg) for arg in inner_node.value.args]
-                                        rendered_args = [str(value) if arg == loop_var else arg for arg in args]
-                                        flow_steps.append(
-                                            f"Step {step_number}: The program prints {', '.join(rendered_args)}."
-                                        )
-                                        step_number += 1
+                        step_number = execute_block(
+                            node.body, env, flow_steps, step_number, functions, timeline
+                        )
                 except Exception:
                     flow_steps.append(
-                        f"Step {step_number}: The loop runs, but exact values could not be simulated."
+                        f"Step {step_number}: Loop executed but values couldn't be simulated."
                     )
                     step_number += 1
 
+        # ---------------- WHILE LOOP ----------------
+        elif isinstance(node, ast.While):
+            flow_steps.append(f"Step {step_number}: A while loop starts.")
+            step_number += 1
+
+            loop_count = 0
+            while loop_count < 5:
+                try:
+                    condition = safe_eval_expr(node.test, env)
+                except Exception:
+                    break
+
+                if not condition:
+                    break
+
+                flow_steps.append(f"Step {step_number}: While condition is true.")
+                step_number += 1
+
+                step_number = execute_block(
+                    node.body, env, flow_steps, step_number, functions, timeline
+                )
+                loop_count += 1
+
+        # ---------------- IF / ELIF / ELSE ----------------
         elif isinstance(node, ast.If):
             condition_text = safe_unparse(node.test)
             flow_steps.append(
-                f"Step {step_number}: The program checks whether {explain_condition(condition_text)}."
+                f"Step {step_number}: Checking if {explain_condition(condition_text)}."
             )
             step_number += 1
 
             try:
-                condition_result = safe_eval_expr(node.test, env)
-
-                if condition_result:
-                    flow_steps.append(f"Step {step_number}: The condition is true, so the if block runs.")
+                if safe_eval_expr(node.test, env):
+                    flow_steps.append(f"Step {step_number}: Condition is true.")
                     step_number += 1
-
-                    for inner_node in node.body:
-                        if isinstance(inner_node, ast.Expr):
-                            if isinstance(inner_node.value, ast.Call):
-                                if hasattr(inner_node.value.func, "id") and inner_node.value.func.id == "print":
-                                    args = [safe_unparse(arg) for arg in inner_node.value.args]
-                                    resolved = [str(env[arg]) if arg in env else arg for arg in args]
-                                    flow_steps.append(
-                                        f"Step {step_number}: The program prints {', '.join(resolved)}."
-                                    )
-                                    step_number += 1
+                    step_number = execute_block(
+                        node.body, env, flow_steps, step_number, functions, timeline
+                    )
                 else:
-                    flow_steps.append(f"Step {step_number}: The condition is false, so the else block runs.")
-                    step_number += 1
+                    handled = False
 
-                    for inner_node in node.orelse:
-                        if isinstance(inner_node, ast.Expr):
-                            if isinstance(inner_node.value, ast.Call):
-                                if hasattr(inner_node.value.func, "id") and inner_node.value.func.id == "print":
-                                    args = [safe_unparse(arg) for arg in inner_node.value.args]
-                                    resolved = [str(env[arg]) if arg in env else arg for arg in args]
-                                    flow_steps.append(
-                                        f"Step {step_number}: The program prints {', '.join(resolved)}."
-                                    )
-                                    step_number += 1
+                    for orelse_node in node.orelse:
+                        if isinstance(orelse_node, ast.If):
+                            if safe_eval_expr(orelse_node.test, env):
+                                flow_steps.append(f"Step {step_number}: Elif condition is true.")
+                                step_number += 1
+                                step_number = execute_block(
+                                    orelse_node.body,
+                                    env,
+                                    flow_steps,
+                                    step_number,
+                                    functions,
+                                    timeline,
+                                )
+                                handled = True
+                                break
+
+                    if not handled and node.orelse:
+                        flow_steps.append(f"Step {step_number}: Else block runs.")
+                        step_number += 1
+                        non_elif_else_nodes = [
+                            n for n in node.orelse if not isinstance(n, ast.If)
+                        ]
+                        step_number = execute_block(
+                            non_elif_else_nodes,
+                            env,
+                            flow_steps,
+                            step_number,
+                            functions,
+                            timeline,
+                        )
 
             except Exception:
-                flow_steps.append(
-                    f"Step {step_number}: The condition could not be fully evaluated safely."
-                )
+                flow_steps.append(f"Step {step_number}: Condition could not be evaluated.")
                 step_number += 1
 
-    if not flow_steps:
-        return ["No execution flow could be generated for this code."]
+    return step_number
 
-    return flow_steps
+
+def generate_execution_flow(code: str):
+    flow_steps = []
+    tree = ast.parse(code)
+    env = {}
+    functions = {}
+    timeline = {}
+
+    execute_block(tree.body, env, flow_steps, 1, functions, timeline)
+
+    return flow_steps, timeline
 
 
 def generate_code_metrics(code: str):
@@ -593,11 +818,12 @@ def explain_code_payload(code: str):
             "explanations": [],
             "categories": {},
             "execution_flow": [],
+            "timeline": {},
         }
 
     final_explanations = generate_final_explanation(code)
     categorized = categorize_explanations(final_explanations)
-    flow_steps = generate_execution_flow(code)
+    flow_steps, timeline = generate_execution_flow(code)
     metrics = generate_code_metrics(code)
     difficulty = estimate_complexity(metrics)
     summary = explain_summary(metrics)
@@ -611,4 +837,5 @@ def explain_code_payload(code: str):
         "explanations": final_explanations,
         "categories": categorized,
         "execution_flow": flow_steps,
+        "timeline": timeline,
     }

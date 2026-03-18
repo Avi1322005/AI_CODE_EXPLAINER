@@ -34,6 +34,13 @@ Step 2: Loop starts
 Step 3: 'i' becomes 0
 Step 4: The program prints 0
 
+### 📊 Variable Timeline (NEW 🔥)
+Tracks how variables change during execution:
+
+Example:
+x:
+- Step 1: 5
+- Step 2: 7
 
 ---
 
@@ -62,14 +69,42 @@ Step 4: The program prints 0
 - Success + error messages
 
 ---
+### 📈 Code Metrics & Summary (NEW)
+- Total lines
+- Functions
+- Loops
+- Conditions
+- Assignments
+- Imports
+
+Also generates a simple summary of the code.
+
+---
+
+### 🎯 Difficulty Estimation (NEW)
+Automatically classifies code as:
+- Beginner
+- Intermediate
+- Advanced
 
 ## 🛠️ Tech Stack
 
 - Python
+- FastAPI
 - Streamlit
-- AST (Abstract Syntax Tree)
+- AST (Abstract Syntax Tree)bstract Syntax Tree)
 
 ---
+
+## 📂 Project Structure
+
+python-code-explainer/
+│
+├── app.py            # FastAPI backend
+├── api.py            # Core logic (AST + execution engine)
+├── dashboard.py      # Streamlit UI
+├── requirements.txt
+└── README.md
 
 ---
 
@@ -88,9 +123,11 @@ cd python-code-explainer
 pip install streamlit
 ```
 ### 3. Run the app
-```bash
-streamlit run app.py
-```
+# Start backend
+uvicorn app:app --reload
+
+# Start dashboard
+streamlit run dashboard.py
 
 # 🧪 Example Input
 ```bash
@@ -117,19 +154,28 @@ Step 2: Loop starts
 Step 3: 'i' becomes 0  
 Step 4: The program prints 0  
 ...
+### 📊 Variable Timeline
 
+x:
+- Step 1: 5
+- Step 2: 7
 
 # 🧭 Project Roadmap
 ## ✅ Completed
-Rule-based analyzer
-AST-based analyzer
-Hybrid explanation system
-Categorized output
-Execution flow simulation
+Code metrics + summary
+Difficulty estimation
+Variable timeline tracking
 
 ## 🚧 In Progress
 📂 File upload support
 📌 Code summary section
+
+## ⚠️ Limitations
+
+- Supports beginner to intermediate Python code
+- Does not fully execute complex libraries or classes
+- While loops are limited to prevent infinite execution
+- Safe evaluation avoids running unsafe code
 
 ## 🔮 Future Improvements
 🌐 Multi-language support (JavaScript, C++, Java)
