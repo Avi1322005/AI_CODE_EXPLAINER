@@ -1,0 +1,614 @@
+import ast
+
+
+def check_errors(code: str):
+    """
+    Checks whether the code has syntax errors.
+    Returns None if valid, else returns an error message.
+    """
+    try:
+        ast.parse(code)
+        return None
+    except IndentationError as e:
+        return f"Indentation error: {e}"
+    except SyntaxError as e:
+        return f"Syntax error: {e}"
+
+
+def safe_unparse(node):
+    """
+    Safely convert AST node back to source-like text.
+    """
+    try:
+        return ast.unparse(node)
+    except Exception:
+        return str(node)
+
+
+def get_node_value(node):
+    """
+    Try to convert simple AST nodes into readable values.
+    """
+    try:
+        return ast.literal_eval(node)
+    except Exception:
+        return safe_unparse(node)
+
+
+def explain_condition(condition_text: str):
+    """
+    Converts simple Python conditions into more human-friendly English.
+    """
+    condition_text = condition_text.replace("==", " is equal to ")
+    condition_text = condition_text.replace("!=", " is not equal to ")
+    condition_text = condition_text.replace(">=", " is greater than or equal to ")
+    condition_text = condition_text.replace("<=", " is less than or equal to ")
+    condition_text = condition_text.replace(">", " is greater than ")
+    condition_text = condition_text.replace("<", " is less than ")
+    return condition_text
+
+
+def explain_range(iter_node):
+    """
+    Converts range(...) into a more human-friendly explanation.
+    """
+    if isinstance(iter_node, ast.Call) and hasattr(iter_node.func, "id") and iter_node.func.id == "range":
+        args = iter_node.args
+
+        if len(args) == 1:
+            stop = safe_unparse(args[0])
+            return f"repeats {stop} times"
+        elif len(args) == 2:
+            start = safe_unparse(args[0])
+            stop = safe_unparse(args[1])
+            return f"repeats from {start} to {stop} (excluding {stop})"
+        elif len(args) == 3:
+            start = safe_unparse(args[0])
+            stop = safe_unparse(args[1])
+            step = safe_unparse(args[2])
+            return f"repeats from {start} to {stop} (excluding {stop}) in steps of {step}"
+
+    return f"goes through values in {safe_unparse(iter_node)}"
+
+
+def explain_print(args):
+    """
+    Converts print() arguments into a more human-friendly explanation.
+    """
+    if len(args) == 1:
+        arg = args[0]
+        if arg.startswith('"') or arg.startswith("'"):
+            return f"This displays the text {arg}."
+        return f"This displays the current value of {arg}."
+    return f"This displays multiple values: {', '.join(args)}."
+
+
+def code_explain(code: str):
+    explanations = []
+    lines = code.split("\n")
+
+    for i, line in enumerate(lines, start=1):
+        stripped = line.strip()
+
+        if not stripped:
+            continue
+
+        if stripped.startswith("print("):
+            explanations.append(f"Line {i}: This line prints output to the screen.")
+        elif stripped.startswith("for "):
+            explanations.append(f"Line {i}: This line starts a for loop.")
+        elif stripped.startswith("while "):
+            explanations.append(f"Line {i}: This line starts a while loop.")
+        elif stripped.startswith("if "):
+            explanations.append(f"Line {i}: This line checks a condition using an if statement.")
+        elif stripped.startswith("elif "):
+            explanations.append(f"Line {i}: This line checks another condition using an elif statement.")
+        elif stripped.startswith("else"):
+            explanations.append(f"Line {i}: This line defines an else block.")
+        elif stripped.startswith("def "):
+            explanations.append(f"Line {i}: This line defines a function.")
+        elif stripped.startswith("return"):
+            explanations.append(f"Line {i}: This line returns a value from a function.")
+        elif stripped.startswith("import ") or stripped.startswith("from "):
+            explanations.append(f"Line {i}: This line imports a module or specific functionality.")
+        elif "input(" in stripped:
+            explanations.append(f"Line {i}: This line takes input from the user.")
+        elif "+=" in stripped or "-=" in stripped or "*=" in stripped or "/=" in stripped:
+            explanations.append(f"Line {i}: This line updates a variable using an augmented assignment.")
+        elif "=" in stripped and "==" not in stripped and ">=" not in stripped and "<=" not in stripped and "!=" not in stripped:
+            explanations.append(f"Line {i}: This line assigns a value to a variable.")
+
+    if not explanations:
+        return ["I could not match this code to my current rule set yet."]
+
+    return explanations
+
+
+def analyze_ast(code: str):
+    explanations = []
+    tree = ast.parse(code)
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            if isinstance(node.targets[0], ast.Name):
+                var_name = node.targets[0].id
+                line_no = node.lineno
+
+                if (
+                    isinstance(node.value, ast.Call)
+                    and hasattr(node.value.func, "id")
+                    and node.value.func.id == "input"
+                ):
+                    prompt = safe_unparse(node.value.args[0]) if node.value.args else ""
+                    explanations.append(
+                        f"Line {line_no}: The program takes input from the user with the prompt {prompt}."
+                    )
+                else:
+                    value = safe_unparse(node.value)
+                    explanations.append(
+                        f"Line {line_no}: The variable '{var_name}' is given the value {value}."
+                    )
+
+        elif isinstance(node, ast.AugAssign):
+            line_no = node.lineno
+            target = safe_unparse(node.target)
+            value = safe_unparse(node.value)
+            op_name = type(node.op).__name__
+            explanations.append(
+                f"Line {line_no}: The variable '{target}' is updated using {op_name} with {value}."
+            )
+
+        elif isinstance(node, ast.For):
+            line_no = node.lineno
+            loop_var = safe_unparse(node.target)
+            loop_explanation = explain_range(node.iter)
+            explanations.append(
+                f"Line {line_no}: This loop {loop_explanation} using the variable '{loop_var}'."
+            )
+
+        elif isinstance(node, ast.While):
+            line_no = node.lineno
+            condition = explain_condition(safe_unparse(node.test))
+            explanations.append(
+                f"Line {line_no}: This while loop keeps running while {condition}."
+            )
+
+        elif isinstance(node, ast.If):
+            line_no = node.lineno
+            condition = explain_condition(safe_unparse(node.test))
+            explanations.append(
+                f"Line {line_no}: This condition checks whether {condition}."
+            )
+
+            if node.orelse:
+                explanations.append(
+                    f"Line {line_no}: If the condition is false, the else block will run."
+                )
+
+        elif isinstance(node, ast.FunctionDef):
+            line_no = node.lineno
+            params = [arg.arg for arg in node.args.args]
+
+            if params:
+                if len(params) == 1:
+                    explanations.append(
+                        f"Line {line_no}: A function named '{node.name}' is defined. It takes one parameter: {params[0]}."
+                    )
+                else:
+                    explanations.append(
+                        f"Line {line_no}: A function named '{node.name}' is defined. It takes these parameters: {', '.join(params)}."
+                    )
+            else:
+                explanations.append(
+                    f"Line {line_no}: A function named '{node.name}' is defined. It takes no parameters."
+                )
+
+        elif isinstance(node, ast.Return):
+            line_no = node.lineno
+            value = safe_unparse(node.value) if node.value else "nothing"
+            explanations.append(f"Line {line_no}: This function returns {value}.")
+
+        elif isinstance(node, ast.Expr):
+            if isinstance(node.value, ast.Call):
+                if hasattr(node.value.func, "id") and node.value.func.id == "print":
+                    line_no = node.lineno
+                    args = [safe_unparse(arg) for arg in node.value.args]
+                    explanations.append(f"Line {line_no}: {explain_print(args)}")
+
+        elif isinstance(node, ast.Import):
+            line_no = node.lineno
+            modules = ", ".join(alias.name for alias in node.names)
+            explanations.append(f"Line {line_no}: This imports the module(s): {modules}.")
+
+        elif isinstance(node, ast.ImportFrom):
+            line_no = node.lineno
+            module = node.module if node.module else "unknown module"
+            names = ", ".join(alias.name for alias in node.names)
+            explanations.append(f"Line {line_no}: This imports {names} from {module}.")
+
+    if not explanations:
+        return ["No recognizable Python structures found."]
+
+    unique = []
+    for e in explanations:
+        if e not in unique:
+            unique.append(e)
+
+    return unique
+
+
+def generate_final_explanation(code: str):
+    rule_explanations = code_explain(code)
+    ast_explanations = analyze_ast(code)
+
+    final_explanations = []
+
+    for explanation in ast_explanations:
+        if explanation not in final_explanations:
+            final_explanations.append(explanation)
+
+    for explanation in rule_explanations:
+        already_covered = False
+
+        for ast_exp in ast_explanations:
+            if (
+                ("for loop" in explanation.lower() and "loop" in ast_exp.lower())
+                or ("if statement" in explanation.lower() and "condition" in ast_exp.lower())
+                or ("elif" in explanation.lower() and "condition" in ast_exp.lower())
+                or ("function" in explanation.lower() and "function" in ast_exp.lower())
+                or ("returns" in explanation.lower() and "returns" in ast_exp.lower())
+                or ("assigns a value" in explanation.lower() and "given the value" in ast_exp.lower())
+                or ("prints output" in explanation.lower() and "displays" in ast_exp.lower())
+                or ("input" in explanation.lower() and "takes input" in ast_exp.lower())
+                or ("else block" in explanation.lower() and "else block" in ast_exp.lower())
+                or ("while loop" in explanation.lower() and "while loop" in ast_exp.lower())
+                or ("imports" in explanation.lower() and "imports" in ast_exp.lower())
+            ):
+                already_covered = True
+                break
+
+        if not already_covered and explanation not in final_explanations:
+            final_explanations.append(explanation)
+
+    return final_explanations
+
+
+def categorize_explanations(explanations):
+    categories = {
+        "Variables": [],
+        "Loops": [],
+        "Conditions": [],
+        "Functions": [],
+        "Input / Output": [],
+        "Imports": [],
+        "Other": [],
+    }
+
+    for explanation in explanations:
+        lower_exp = explanation.lower()
+
+        if "given the value" in lower_exp or "assigns a value" in lower_exp or "updated using" in lower_exp:
+            categories["Variables"].append(explanation)
+        elif "loop" in lower_exp:
+            categories["Loops"].append(explanation)
+        elif "condition checks" in lower_exp or "else block" in lower_exp or "while loop keeps running" in lower_exp:
+            categories["Conditions"].append(explanation)
+        elif "function named" in lower_exp or "defines a function" in lower_exp or "returns" in lower_exp:
+            categories["Functions"].append(explanation)
+        elif "displays" in lower_exp or "prints output" in lower_exp or "takes input" in lower_exp:
+            categories["Input / Output"].append(explanation)
+        elif "imports" in lower_exp:
+            categories["Imports"].append(explanation)
+        else:
+            categories["Other"].append(explanation)
+
+    return categories
+
+
+def build_simple_env(tree):
+    """
+    Build a safe environment from simple assignments only.
+    """
+    env = {}
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and isinstance(node.targets[0], ast.Name):
+            try:
+                env[node.targets[0].id] = ast.literal_eval(node.value)
+            except Exception:
+                pass
+    return env
+
+
+def safe_eval_expr(node, env):
+    """
+    Safely evaluate only simple literals, names, and comparisons.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value
+
+    if isinstance(node, ast.Name):
+        if node.id in env:
+            return env[node.id]
+        raise ValueError(f"Unknown variable: {node.id}")
+
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        return -safe_eval_expr(node.operand, env)
+
+    if isinstance(node, ast.BinOp):
+        left = safe_eval_expr(node.left, env)
+        right = safe_eval_expr(node.right, env)
+
+        if isinstance(node.op, ast.Add):
+            return left + right
+        if isinstance(node.op, ast.Sub):
+            return left - right
+        if isinstance(node.op, ast.Mult):
+            return left * right
+        if isinstance(node.op, ast.Div):
+            return left / right
+        if isinstance(node.op, ast.Mod):
+            return left % right
+
+        raise ValueError("Unsupported binary operation")
+
+    if isinstance(node, ast.Compare):
+        left = safe_eval_expr(node.left, env)
+
+        for op, comparator in zip(node.ops, node.comparators):
+            right = safe_eval_expr(comparator, env)
+
+            if isinstance(op, ast.Eq):
+                ok = left == right
+            elif isinstance(op, ast.NotEq):
+                ok = left != right
+            elif isinstance(op, ast.Lt):
+                ok = left < right
+            elif isinstance(op, ast.LtE):
+                ok = left <= right
+            elif isinstance(op, ast.Gt):
+                ok = left > right
+            elif isinstance(op, ast.GtE):
+                ok = left >= right
+            else:
+                raise ValueError("Unsupported comparison")
+
+            if not ok:
+                return False
+            left = right
+
+        return True
+
+    if isinstance(node, ast.BoolOp):
+        values = [safe_eval_expr(v, env) for v in node.values]
+        if isinstance(node.op, ast.And):
+            return all(values)
+        if isinstance(node.op, ast.Or):
+            return any(values)
+        raise ValueError("Unsupported boolean operation")
+
+    raise ValueError("Unsupported expression")
+
+
+def generate_execution_flow(code: str):
+    """
+    Generates a simple beginner-friendly execution flow for basic Python code.
+    """
+    flow_steps = []
+    tree = ast.parse(code)
+    step_number = 1
+    env = {}
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            if isinstance(node.targets[0], ast.Name):
+                var_name = node.targets[0].id
+                value = get_node_value(node.value)
+                flow_steps.append(f"Step {step_number}: Variable '{var_name}' is set to {value}.")
+                step_number += 1
+                try:
+                    env[var_name] = ast.literal_eval(node.value)
+                except Exception:
+                    pass
+
+        elif isinstance(node, ast.AugAssign):
+            target = safe_unparse(node.target)
+            value = safe_unparse(node.value)
+            flow_steps.append(f"Step {step_number}: Variable '{target}' is updated using {type(node.op).__name__} with {value}.")
+            step_number += 1
+
+        elif isinstance(node, ast.Expr):
+            if isinstance(node.value, ast.Call):
+                if hasattr(node.value.func, "id") and node.value.func.id == "print":
+                    args = [safe_unparse(arg) for arg in node.value.args]
+                    flow_steps.append(f"Step {step_number}: The program prints {', '.join(args)}.")
+                    step_number += 1
+
+        elif isinstance(node, ast.For):
+            loop_var = safe_unparse(node.target)
+
+            if (
+                isinstance(node.iter, ast.Call)
+                and hasattr(node.iter.func, "id")
+                and node.iter.func.id == "range"
+            ):
+                args = node.iter.args
+
+                if len(args) == 1:
+                    start = 0
+                    stop = get_node_value(args[0])
+                    step = 1
+                elif len(args) == 2:
+                    start = get_node_value(args[0])
+                    stop = get_node_value(args[1])
+                    step = 1
+                elif len(args) == 3:
+                    start = get_node_value(args[0])
+                    stop = get_node_value(args[1])
+                    step = get_node_value(args[2])
+                else:
+                    start, stop, step = 0, 0, 1
+
+                flow_steps.append(f"Step {step_number}: A loop starts.")
+                step_number += 1
+
+                try:
+                    for value in range(int(start), int(stop), int(step)):
+                        flow_steps.append(f"Step {step_number}: '{loop_var}' becomes {value}.")
+                        step_number += 1
+
+                        for inner_node in node.body:
+                            if isinstance(inner_node, ast.Expr):
+                                if isinstance(inner_node.value, ast.Call):
+                                    if hasattr(inner_node.value.func, "id") and inner_node.value.func.id == "print":
+                                        args = [safe_unparse(arg) for arg in inner_node.value.args]
+                                        rendered_args = [str(value) if arg == loop_var else arg for arg in args]
+                                        flow_steps.append(
+                                            f"Step {step_number}: The program prints {', '.join(rendered_args)}."
+                                        )
+                                        step_number += 1
+                except Exception:
+                    flow_steps.append(
+                        f"Step {step_number}: The loop runs, but exact values could not be simulated."
+                    )
+                    step_number += 1
+
+        elif isinstance(node, ast.If):
+            condition_text = safe_unparse(node.test)
+            flow_steps.append(
+                f"Step {step_number}: The program checks whether {explain_condition(condition_text)}."
+            )
+            step_number += 1
+
+            try:
+                condition_result = safe_eval_expr(node.test, env)
+
+                if condition_result:
+                    flow_steps.append(f"Step {step_number}: The condition is true, so the if block runs.")
+                    step_number += 1
+
+                    for inner_node in node.body:
+                        if isinstance(inner_node, ast.Expr):
+                            if isinstance(inner_node.value, ast.Call):
+                                if hasattr(inner_node.value.func, "id") and inner_node.value.func.id == "print":
+                                    args = [safe_unparse(arg) for arg in inner_node.value.args]
+                                    resolved = [str(env[arg]) if arg in env else arg for arg in args]
+                                    flow_steps.append(
+                                        f"Step {step_number}: The program prints {', '.join(resolved)}."
+                                    )
+                                    step_number += 1
+                else:
+                    flow_steps.append(f"Step {step_number}: The condition is false, so the else block runs.")
+                    step_number += 1
+
+                    for inner_node in node.orelse:
+                        if isinstance(inner_node, ast.Expr):
+                            if isinstance(inner_node.value, ast.Call):
+                                if hasattr(inner_node.value.func, "id") and inner_node.value.func.id == "print":
+                                    args = [safe_unparse(arg) for arg in inner_node.value.args]
+                                    resolved = [str(env[arg]) if arg in env else arg for arg in args]
+                                    flow_steps.append(
+                                        f"Step {step_number}: The program prints {', '.join(resolved)}."
+                                    )
+                                    step_number += 1
+
+            except Exception:
+                flow_steps.append(
+                    f"Step {step_number}: The condition could not be fully evaluated safely."
+                )
+                step_number += 1
+
+    if not flow_steps:
+        return ["No execution flow could be generated for this code."]
+
+    return flow_steps
+
+
+def generate_code_metrics(code: str):
+    tree = ast.parse(code)
+
+    metrics = {
+        "total_lines": len([line for line in code.splitlines() if line.strip()]),
+        "functions": 0,
+        "loops": 0,
+        "conditions": 0,
+        "imports": 0,
+        "assignments": 0,
+    }
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef):
+            metrics["functions"] += 1
+        elif isinstance(node, (ast.For, ast.While)):
+            metrics["loops"] += 1
+        elif isinstance(node, ast.If):
+            metrics["conditions"] += 1
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            metrics["imports"] += 1
+        elif isinstance(node, (ast.Assign, ast.AugAssign)):
+            metrics["assignments"] += 1
+
+    return metrics
+
+
+def estimate_complexity(metrics):
+    score = (
+        metrics["functions"] * 2
+        + metrics["loops"] * 2
+        + metrics["conditions"] * 2
+        + metrics["imports"]
+        + metrics["assignments"]
+    )
+
+    if score <= 4:
+        return "Beginner"
+    elif score <= 9:
+        return "Intermediate"
+    return "Advanced"
+
+
+def explain_summary(metrics):
+    return (
+        f"This code has {metrics['total_lines']} non-empty line(s), "
+        f"{metrics['functions']} function(s), "
+        f"{metrics['loops']} loop(s), "
+        f"{metrics['conditions']} condition block(s), "
+        f"{metrics['assignments']} assignment/update statement(s), "
+        f"and {metrics['imports']} import statement(s)."
+    )
+
+
+def explain_code_payload(code: str):
+    """
+    Main reusable function for API or UI.
+    """
+    error = check_errors(code)
+
+    if error:
+        return {
+            "success": False,
+            "error": error,
+            "summary": "",
+            "difficulty": "",
+            "metrics": {},
+            "explanations": [],
+            "categories": {},
+            "execution_flow": [],
+        }
+
+    final_explanations = generate_final_explanation(code)
+    categorized = categorize_explanations(final_explanations)
+    flow_steps = generate_execution_flow(code)
+    metrics = generate_code_metrics(code)
+    difficulty = estimate_complexity(metrics)
+    summary = explain_summary(metrics)
+
+    return {
+        "success": True,
+        "error": None,
+        "summary": summary,
+        "difficulty": difficulty,
+        "metrics": metrics,
+        "explanations": final_explanations,
+        "categories": categorized,
+        "execution_flow": flow_steps,
+    }
