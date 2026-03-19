@@ -1,4 +1,72 @@
 import ast
+from graphviz import Digraph
+
+
+def generate_flowchart(code: str):
+    """
+    Generates a simple flowchart from top-level Python code.
+    Returns Graphviz source as text.
+    """
+    tree = ast.parse(code)
+    dot = Digraph()
+    dot.attr(rankdir="TB")
+
+    node_counter = 0
+
+    def add_node(label, shape="box"):
+        nonlocal node_counter
+        node_name = f"node_{node_counter}"
+        dot.node(node_name, label, shape=shape)
+        node_counter += 1
+        return node_name
+
+    start_node = add_node("Start", shape="oval")
+    prev_node = start_node
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            label = safe_unparse(node)
+
+        elif isinstance(node, ast.AugAssign):
+            label = safe_unparse(node)
+
+        elif isinstance(node, ast.If):
+            label = f"If: {safe_unparse(node.test)}"
+
+        elif isinstance(node, ast.For):
+            label = f"For: {safe_unparse(node.target)} in {safe_unparse(node.iter)}"
+
+        elif isinstance(node, ast.While):
+            label = f"While: {safe_unparse(node.test)}"
+
+        elif isinstance(node, ast.FunctionDef):
+            label = f"Function: {node.name}()"
+
+        elif isinstance(node, ast.Return):
+            label = f"Return: {safe_unparse(node.value) if node.value else 'None'}"
+
+        elif isinstance(node, ast.Expr):
+            label = safe_unparse(node)
+
+        elif isinstance(node, ast.Import):
+            label = f"Import: {', '.join(alias.name for alias in node.names)}"
+
+        elif isinstance(node, ast.ImportFrom):
+            names = ", ".join(alias.name for alias in node.names)
+            module = node.module or "unknown"
+            label = f"From {module} import {names}"
+
+        else:
+            label = type(node).__name__
+
+        current_node = add_node(label)
+        dot.edge(prev_node, current_node)
+        prev_node = current_node
+
+    end_node = add_node("End", shape="oval")
+    dot.edge(prev_node, end_node)
+
+    return dot.source
 
 
 def record_variable(timeline, var_name, value, step_number):
@@ -819,6 +887,7 @@ def explain_code_payload(code: str):
             "categories": {},
             "execution_flow": [],
             "timeline": {},
+            "flowchart": "",
         }
 
     final_explanations = generate_final_explanation(code)
@@ -827,6 +896,7 @@ def explain_code_payload(code: str):
     metrics = generate_code_metrics(code)
     difficulty = estimate_complexity(metrics)
     summary = explain_summary(metrics)
+    flowchart = generate_flowchart(code)
 
     return {
         "success": True,
@@ -838,4 +908,5 @@ def explain_code_payload(code: str):
         "categories": categorized,
         "execution_flow": flow_steps,
         "timeline": timeline,
+        "flowchart": flowchart,
     }

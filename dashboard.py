@@ -1,6 +1,7 @@
 import json
 import streamlit as st
 import requests
+import graphviz
 
 API_URL = "http://127.0.0.1:8000/explain"
 
@@ -21,7 +22,7 @@ st.info(
 st.sidebar.title("About")
 st.sidebar.info(
     "This dashboard sends your Python code to a FastAPI backend, "
-    "which analyzes syntax, code structure, execution flow, and variable changes."
+    "which analyzes syntax, code structure, execution flow, variable changes, and flowcharts."
 )
 
 code = st.text_area(
@@ -73,7 +74,6 @@ if st.button("Explain Code"):
         else:
             st.success("Code analyzed successfully.")
 
-            # Summary + Difficulty
             col1, col2 = st.columns(2)
 
             with col1:
@@ -84,7 +84,6 @@ if st.button("Explain Code"):
                 st.markdown("### 🎯 Difficulty")
                 st.success(result.get("difficulty", "Unknown"))
 
-            # Metrics
             st.markdown("### 📊 Metrics")
             metrics = result.get("metrics", {})
 
@@ -98,25 +97,21 @@ if st.button("Explain Code"):
             col5.metric("Assignments", metrics.get("assignments", 0))
             col6.metric("Imports", metrics.get("imports", 0))
 
-            # All explanations
             with st.expander("📝 All Explanations", expanded=False):
                 for item in result.get("explanations", []):
                     st.markdown(f"- {item}")
 
-            # Categorized explanations
             for category, items in result.get("categories", {}).items():
                 if items:
                     with st.expander(f"📁 {category}", expanded=False):
                         for item in items:
                             st.markdown(f"- {item}")
 
-            # Execution flow
             st.divider()
             with st.expander("🔄 Execution Flow", expanded=True):
                 for step in result.get("execution_flow", []):
                     st.markdown(f"- {step}")
 
-            # Variable timeline
             st.divider()
             with st.expander("📊 Variable Timeline", expanded=True):
                 timeline = result.get("timeline", {})
@@ -129,11 +124,17 @@ if st.button("Explain Code"):
                             for step in steps:
                                 st.markdown(f"- {step}")
 
-            # Raw API response
+            st.divider()
+            st.subheader("🧭 Code Flow Diagram")
+            flowchart_source = result.get("flowchart", "")
+            if flowchart_source:
+                st.graphviz_chart(flowchart_source)
+            else:
+                st.info("No flowchart available.")
+
             with st.expander("🔍 View Raw API Response", expanded=False):
                 st.json(result)
 
-            # Export section
             st.divider()
             st.subheader("📥 Export Results")
 
@@ -171,6 +172,10 @@ if st.button("Explain Code"):
                         report_lines.append(f"  - {step}")
             else:
                 report_lines.append("No variable changes recorded.")
+            report_lines.append("")
+
+            report_lines.append("Flowchart Source:")
+            report_lines.append(result.get("flowchart", ""))
 
             report_text = "\n".join(report_lines)
 
