@@ -8,29 +8,10 @@ API_URL = "http://127.0.0.1:8000/explain"
 st.set_page_config(
     page_title="Python Code Explainer",
     page_icon="🧠",
-    layout="centered"
+    layout="wide"
 )
 
-st.title("🧠 Python Code Explainer")
-st.caption("A beginner-friendly standalone dashboard for explaining Python code.")
-
-st.info(
-    "Paste your Python code below and click **Explain Code**. "
-    "The app checks syntax, analyzes code structure, and shows a simplified explanation."
-)
-
-st.sidebar.title("About")
-st.sidebar.info(
-    "This dashboard sends your Python code to a FastAPI backend, "
-    "which analyzes syntax, code structure, execution flow, variable changes, and flowcharts."
-)
-
-code = st.text_area(
-    "Enter your Python code here:",
-    height=250,
-    placeholder="Example:\nfor i in range(3):\n    print(i)"
-)
-
+# ---------------- SAMPLE CODES ----------------
 sample_codes = {
     "For Loop": "for i in range(3):\n    print(i)",
     "If Else": "x = 10\nif x > 5:\n    print('Big')\nelse:\n    print('Small')",
@@ -39,23 +20,93 @@ sample_codes = {
     "While Loop": "x = 0\nwhile x < 3:\n    print(x)\n    x = x + 1",
 }
 
-selected_sample = st.selectbox(
-    "Try a sample code:",
+# ---------------- HEADER ----------------
+st.title("🧠 Python Code Explainer")
+st.caption("A beginner-friendly standalone dashboard for explaining Python code.")
+
+st.info(
+    "Paste your Python code below and click **Explain Code**. "
+    "The app checks syntax, analyzes code structure, and shows a simplified explanation."
+)
+
+# ---------------- SIDEBAR ----------------
+st.sidebar.title("⚙️ Control Panel")
+
+st.sidebar.markdown("### ℹ️ About")
+st.sidebar.info(
+    "This dashboard uses a FastAPI backend to analyze Python code and generate "
+    "summaries, explanations, execution flow, variable tracking, and flow diagrams."
+)
+
+view_mode = st.sidebar.radio(
+    "View Style:",
+    ["Focused", "Detailed"],
+    index=0
+)
+
+preset_mode = st.sidebar.radio(
+    "Analysis Mode:",
+    ["Beginner", "Developer", "Full Analysis", "Custom"],
+    index=0
+)
+
+all_options = [
+    "Summary",
+    "Difficulty",
+    "Metrics",
+    "All Explanations",
+    "Categories",
+    "Execution Flow",
+    "Variable Timeline",
+    "Flow Diagram",
+    "Raw API Response",
+]
+
+preset_map = {
+    "Beginner": ["Summary", "All Explanations", "Execution Flow"],
+    "Developer": ["Metrics", "Variable Timeline", "Raw API Response"],
+    "Full Analysis": all_options,
+}
+
+if preset_mode == "Custom":
+    selected_views = st.sidebar.multiselect(
+        "Select Output Sections:",
+        all_options,
+        default=["Summary", "Difficulty", "Execution Flow"],
+    )
+else:
+    selected_views = preset_map[preset_mode]
+
+st.sidebar.markdown("### 🧪 Sample Code")
+selected_sample = st.sidebar.selectbox(
+    "Choose example:",
     ["None"] + list(sample_codes.keys())
 )
 
-if selected_sample != "None":
-    code = sample_codes[selected_sample]
-    st.code(code, language="python")
+st.sidebar.markdown("### 🎛️ UI Settings")
+show_line_map = st.sidebar.checkbox("Show Line Numbers", value=False)
+show_footer = st.sidebar.checkbox("Show Footer", value=True)
 
-if st.button("Explain Code"):
+st.sidebar.markdown("### 📌 Current Selection")
+st.sidebar.write(f"Sections selected: {len(selected_views)}")
+for item in selected_views:
+    st.sidebar.markdown(f"- {item}")
+
+# ---------------- INPUT ----------------
+default_code = sample_codes[selected_sample] if selected_sample != "None" else ""
+
+code = st.text_area(
+    "Enter your Python code here:",
+    value=default_code,
+    height=260,
+    placeholder="Example:\nfor i in range(3):\n    print(i)"
+)
+
+# ---------------- ANALYZE ----------------
+if st.button("Explain Code", use_container_width=True):
     if not code.strip():
         st.warning("Please write or paste some Python code first.")
     else:
-        st.divider()
-        st.subheader("📄 Your Code")
-        st.code(code, language="python")
-
         try:
             response = requests.post(API_URL, json={"code": code}, timeout=20)
             result = response.json()
@@ -67,74 +118,141 @@ if st.button("Explain Code"):
             st.stop()
 
         st.divider()
-        st.subheader("✅ Final Explanation")
+        st.subheader("✅ Analysis Result")
 
         if not result.get("success"):
             st.error(result.get("error", "Unknown error occurred."))
         else:
             st.success("Code analyzed successfully.")
 
-            col1, col2 = st.columns(2)
-
-            with col1:
-                st.markdown("### 🧾 Summary")
-                st.write(result.get("summary", "No summary available."))
-
-            with col2:
-                st.markdown("### 🎯 Difficulty")
-                st.success(result.get("difficulty", "Unknown"))
-
-            st.markdown("### 📊 Metrics")
             metrics = result.get("metrics", {})
-
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Lines", metrics.get("total_lines", 0))
-            col2.metric("Functions", metrics.get("functions", 0))
-            col3.metric("Loops", metrics.get("loops", 0))
-
-            col4, col5, col6 = st.columns(3)
-            col4.metric("Conditions", metrics.get("conditions", 0))
-            col5.metric("Assignments", metrics.get("assignments", 0))
-            col6.metric("Imports", metrics.get("imports", 0))
-
-            with st.expander("📝 All Explanations", expanded=False):
-                for item in result.get("explanations", []):
-                    st.markdown(f"- {item}")
-
-            for category, items in result.get("categories", {}).items():
-                if items:
-                    with st.expander(f"📁 {category}", expanded=False):
-                        for item in items:
-                            st.markdown(f"- {item}")
-
-            st.divider()
-            with st.expander("🔄 Execution Flow", expanded=True):
-                for step in result.get("execution_flow", []):
-                    st.markdown(f"- {step}")
-
-            st.divider()
-            with st.expander("📊 Variable Timeline", expanded=True):
-                timeline = result.get("timeline", {})
-
-                if not timeline:
-                    st.info("No variable changes recorded.")
-                else:
-                    for var, steps in timeline.items():
-                        with st.expander(f"Variable: {var}", expanded=False):
-                            for step in steps:
-                                st.markdown(f"- {step}")
-
-            st.divider()
-            st.subheader("🧭 Code Flow Diagram")
+            explanations = result.get("explanations", [])
+            categories = result.get("categories", {})
+            execution_flow = result.get("execution_flow", [])
+            timeline = result.get("timeline", {})
             flowchart_source = result.get("flowchart", "")
-            if flowchart_source:
-                st.graphviz_chart(flowchart_source)
-            else:
-                st.info("No flowchart available.")
 
-            with st.expander("🔍 View Raw API Response", expanded=False):
-                st.json(result)
+            # ---------------- LAYOUT ----------------
+            left_col, right_col = st.columns([1, 1.35], gap="large")
 
+            with left_col:
+                st.markdown("### 📄 Code")
+                st.code(code, language="python")
+
+                if show_line_map:
+                    st.markdown("### 🔢 Code With Line Numbers")
+                    numbered_lines = []
+                    for i, line in enumerate(code.splitlines(), start=1):
+                        numbered_lines.append(f"{str(i).rjust(3)} | {line}")
+                    st.text("\n".join(numbered_lines))
+
+            with right_col:
+                if view_mode == "Focused":
+                    tab1, tab2 = st.tabs(["📊 Overview", "🔄 Execution"])
+
+                    with tab1:
+                        if "Summary" in selected_views:
+                            st.markdown("### 🧾 Summary")
+                            st.write(result.get("summary", "No summary available."))
+
+                        if "Difficulty" in selected_views:
+                            st.markdown("### 🎯 Difficulty")
+                            st.success(result.get("difficulty", "Unknown"))
+
+                        if "All Explanations" in selected_views:
+                            with st.expander("📝 Explanations", expanded=True):
+                                for item in explanations:
+                                    st.markdown(f"- {item}")
+
+                    with tab2:
+                        if "Execution Flow" in selected_views:
+                            with st.expander("🔄 Execution Flow", expanded=True):
+                                for step in execution_flow:
+                                    st.markdown(f"- {step}")
+
+                        if "Variable Timeline" in selected_views:
+                            with st.expander("📊 Variable Timeline", expanded=False):
+                                if not timeline:
+                                    st.info("No variable changes recorded.")
+                                else:
+                                    for var, steps in timeline.items():
+                                        with st.expander(f"Variable: {var}", expanded=False):
+                                            for step in steps:
+                                                st.markdown(f"- {step}")
+
+                else:
+                    tab1, tab2, tab3, tab4 = st.tabs(
+                        ["📊 Overview", "🧠 Explanation", "🔄 Execution", "📈 Advanced"]
+                    )
+
+                    with tab1:
+                        if "Summary" in selected_views or "Difficulty" in selected_views:
+                            c1, c2 = st.columns(2)
+
+                            with c1:
+                                if "Summary" in selected_views:
+                                    st.markdown("### 🧾 Summary")
+                                    st.write(result.get("summary", "No summary available."))
+
+                            with c2:
+                                if "Difficulty" in selected_views:
+                                    st.markdown("### 🎯 Difficulty")
+                                    st.success(result.get("difficulty", "Unknown"))
+
+                        if "Metrics" in selected_views:
+                            st.markdown("### 📊 Metrics")
+                            c1, c2, c3 = st.columns(3)
+                            c1.metric("Lines", metrics.get("total_lines", 0))
+                            c2.metric("Functions", metrics.get("functions", 0))
+                            c3.metric("Loops", metrics.get("loops", 0))
+
+                            c4, c5, c6 = st.columns(3)
+                            c4.metric("Conditions", metrics.get("conditions", 0))
+                            c5.metric("Assignments", metrics.get("assignments", 0))
+                            c6.metric("Imports", metrics.get("imports", 0))
+
+                    with tab2:
+                        if "All Explanations" in selected_views:
+                            with st.expander("📝 All Explanations", expanded=True):
+                                for item in explanations:
+                                    st.markdown(f"- {item}")
+
+                        if "Categories" in selected_views:
+                            for category, items in categories.items():
+                                if items:
+                                    with st.expander(f"📁 {category}", expanded=False):
+                                        for item in items:
+                                            st.markdown(f"- {item}")
+
+                    with tab3:
+                        if "Execution Flow" in selected_views:
+                            with st.expander("🔄 Execution Flow", expanded=True):
+                                for step in execution_flow:
+                                    st.markdown(f"- {step}")
+
+                        if "Variable Timeline" in selected_views:
+                            with st.expander("📊 Variable Timeline", expanded=True):
+                                if not timeline:
+                                    st.info("No variable changes recorded.")
+                                else:
+                                    for var, steps in timeline.items():
+                                        with st.expander(f"Variable: {var}", expanded=False):
+                                            for step in steps:
+                                                st.markdown(f"- {step}")
+
+                    with tab4:
+                        if "Flow Diagram" in selected_views:
+                            st.markdown("### 🧭 Code Flow Diagram")
+                            if flowchart_source:
+                                st.graphviz_chart(flowchart_source)
+                            else:
+                                st.info("No flowchart available.")
+
+                        if "Raw API Response" in selected_views:
+                            with st.expander("🔍 View Raw API Response", expanded=False):
+                                st.json(result)
+
+            # ---------------- EXPORT ----------------
             st.divider()
             st.subheader("📥 Export Results")
 
@@ -154,17 +272,16 @@ if st.button("Explain Code"):
             report_lines.append("")
 
             report_lines.append("All Explanations:")
-            for item in result.get("explanations", []):
+            for item in explanations:
                 report_lines.append(f"- {item}")
             report_lines.append("")
 
             report_lines.append("Execution Flow:")
-            for step in result.get("execution_flow", []):
+            for step in execution_flow:
                 report_lines.append(f"- {step}")
             report_lines.append("")
 
             report_lines.append("Variable Timeline:")
-            timeline = result.get("timeline", {})
             if timeline:
                 for var, steps in timeline.items():
                     report_lines.append(f"{var}:")
@@ -175,27 +292,30 @@ if st.button("Explain Code"):
             report_lines.append("")
 
             report_lines.append("Flowchart Source:")
-            report_lines.append(result.get("flowchart", ""))
+            report_lines.append(flowchart_source)
 
             report_text = "\n".join(report_lines)
 
-            col1, col2 = st.columns(2)
-
-            with col1:
+            c1, c2 = st.columns(2)
+            with c1:
                 st.download_button(
                     "📄 Download Report (.txt)",
                     data=report_text,
                     file_name="code_explanation_report.txt",
-                    mime="text/plain"
+                    mime="text/plain",
+                    use_container_width=True
                 )
 
-            with col2:
+            with c2:
                 st.download_button(
                     "📦 Download JSON",
                     data=json.dumps(result, indent=2),
                     file_name="code_explanation.json",
-                    mime="application/json"
+                    mime="application/json",
+                    use_container_width=True
                 )
 
-st.divider()
-st.caption("🚀 Python Code Explainer | Built with FastAPI + Streamlit")
+# ---------------- FOOTER ----------------
+if show_footer:
+    st.divider()
+    st.caption("🚀 Python Code Explainer | Built with FastAPI + Streamlit")
