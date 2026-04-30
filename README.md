@@ -1,6 +1,6 @@
 # 🚀 AI Code Analyzer
 
-![AI Code Analyzer Screenshot](./screenshot.png)
+![AI Code Analyzer Screenshot](./mern_code_analyzer/screenshot.png)
 
 An advanced, production-grade AI-powered code analysis platform built on the **MERN Stack** (MongoDB, Express, React, Node.js). This platform acts as your personal Senior Software Engineer, offering deep code analysis, auto-refactoring, simulated technical interviews, and automated test case generation.
 
